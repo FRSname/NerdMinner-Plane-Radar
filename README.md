@@ -1,6 +1,6 @@
 # Plane Radar
 
-<img width="800" alt="NerdMinner Plane Radar" src="NerdMinner-Plane-Radar.gif" />
+![NerdMinner Plane Radar](https://raw.githubusercontent.com/FRSname/NerdMinner-Plane-Radar/main/NerdMinner-Plane-Radar.gif)
 
 **3D printed case (STL + assembly):** [MakerWorld](https://makerworld.com/en/models/2872376-esp32-plane-radar-live-ads-b-on-a-round-display#profileId-3207083) · **Firmware:** [Releases](https://github.com/MatixYo/ESP32-Plane-Radar/releases)
 
