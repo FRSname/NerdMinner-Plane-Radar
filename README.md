@@ -4,7 +4,23 @@
 
 **3D printed case (STL + assembly):** [MakerWorld](https://makerworld.com/en/models/2872376-esp32-plane-radar-live-ads-b-on-a-round-display#profileId-3207083) · **Firmware:** [Releases](https://github.com/MatixYo/ESP32-Plane-Radar/releases)
 
-Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (240×240). Shows a circular **ADS-B radar** around your configured location, with **WiFiManager** for first-time setup.
+Firmware showing a circular **ADS-B radar** around your configured location, with **WiFiManager** for first-time setup.
+
+> **This is a fork** of [MatixYo/ESP32-Plane-Radar](https://github.com/MatixYo/ESP32-Plane-Radar) adding support for
+> **ESP32-2432S028-class boards** ("Cheap Yellow Display" and NerdMiner TPM408-2.8 clones), plus tap-to-inspect,
+> configurable radar orientation, and metric altitudes. The original ESP32-C3 target is unchanged.
+
+## Supported boards
+
+| Env | Board | Display | Notes |
+|-----|-------|---------|-------|
+| `supermini` | ESP32-C3 Super Mini | 1.28″ round GC9A01 240×240 | Upstream target |
+| `cyd` | ESP32-2432S028 (ESP32-WROOM-32) | 2.8″ ILI9341 320×240 | |
+| `cyd-st7789` | Same board, later revision | 2.8″ ST7789 320×240 | Incl. NerdMiner TPM408-2.8 |
+
+The two 2.8″ revisions look identical from outside. If the image is mirrored or sheared on `cyd`, flash
+`cyd-st7789` — the controllers share `MADCTL`/`CASET`/`RASET`, so the wrong driver half-works rather than
+failing outright.
 
 ## What it does
 
@@ -13,7 +29,9 @@ Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (
 
 After Wi‑Fi is saved, the device reconnects automatically; the radar runs in the main loop with periodic ADS-B updates (~5 s).
 
-## Controls (BOOT, GPIO 9, active LOW)
+## Controls
+
+BOOT button — **GPIO 9** on the Super Mini, **GPIO 0** on the 2.8″ boards; active LOW either way.
 
 | Action | Effect |
 |--------|--------|
@@ -21,6 +39,9 @@ After Wi‑Fi is saved, the device reconnects automatically; the radar runs in t
 | **Hold 3 s** | Clear Wi‑Fi, location, and units; reboot into setup portal |
 
 During setup you can also hold BOOT at power-on to force a credential reset (same as the long press).
+
+On the 2.8″ boards the touchscreen adds **tap an aircraft** → flight detail card, **tap again** → dismiss.
+The long press does *not* clear the touch calibration.
 
 ## Wi‑Fi setup portal
 
@@ -82,6 +103,33 @@ Preset and miles/km choice persist across reboot (`planeradar` NVS namespace).
 
 As range decreases (or aircraft approach), targets move inward; beyond-ring dots become full symbols when they cross the outer ring.
 
+### Tap to inspect (2.8″ boards)
+
+Tapping an aircraft symbol opens a detail card over the radar; any tap dismisses it. Radar polling pauses
+while it is open so nothing repaints underneath.
+
+| Field | Source |
+|-------|--------|
+| Callsign (or ICAO hex) | adsb.fi `flight` / `hex` |
+| Type + registration | `t` / `r` |
+| Altitude, speed, climb | `alt_baro`, `gs`, `baro_rate` — shown in m, km/h, m/s |
+| Distance + bearing | Computed from your configured location |
+| Track, squawk | `track`, `squawk` |
+| Origin → destination | [api.adsbdb.com](https://www.adsbdb.com/) (second request, on tap) |
+
+Routes are looked up per tap and block briefly; GA and cargo flights often have none and show `unknown`.
+
+Touch is an **XPT2046** on its own SPI bus. Calibration is measured once by tapping four corner markers and
+kept in NVS, with the measured values compiled in as a fallback (`kTouchDefaultCal`). To recalibrate, set
+`kTouchForceCalibration = true` in `config.h`. `kTouchDebugMarker` draws a dot at each touch and logs raw
+coordinates, which is the fastest way to tell "touch is dead" from "touch is miscalibrated".
+
+### Radar orientation
+
+`kScreenUpBearingDeg` in `include/ui/radar_theme.h` sets which compass bearing points at the top of the
+screen — `0` for conventional north-up, `90` for east-up (this fork's default). Aircraft projection, rim
+dots, heading vectors, runway overlay and the N/E/S/W labels all derive from that single value.
+
 ### ADS-B
 
 - Source: `https://opendata.adsb.fi/api/v3/`
@@ -101,6 +149,9 @@ Edit **`include/config.h`** for hardware and behavior:
 | Display SPI | pins, `kDisplayInvert`, `kDisplayRgbOrder`, `kDisplaySpiWriteHz` |
 | Default location | `kDefaultRadarLat`, `kDefaultRadarLon` (until portal overrides) |
 | ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft` |
+| Altitude units | `kAltitudeInMeters` (`true` = metres, `false` = feet as the feed reports them) |
+| Touch (2.8″) | `kTouchPin*`, `kTouchDefaultCal`, `kTouchForceCalibration`, `kTouchDebugMarker` |
+| Rotation | `kDisplayRotation` — bit 2 (`+4`) is LovyanGFX's mirror flag, so `5` is "landscape, mirrored" |
 
 Range presets: `include/ui/radar_range.h` (`kRangePresets`).
 
@@ -116,15 +167,17 @@ include/
   data/
     large_airports.h
   ui/
-    radar_theme.h
+    radar_theme.h            — layout, colors, screen-up bearing
     radar_range.h
     radar_display.h
     runway_overlay.h
     status_screens.h
+    flight_detail.h          — tap-to-inspect card
   services/
     wifi_setup.h
     radar_location.h
     adsb_client.h
+    route_client.h           — origin/destination lookup
 data/
   ui_font.vlw              — embedded smooth UI font (Noto Sans Bold)
 scripts/
@@ -138,7 +191,9 @@ src/
   services/
 ```
 
-## Wiring (GC9A01 ↔ ESP32-C3 Super Mini)
+## Wiring
+
+### GC9A01 ↔ ESP32-C3 Super Mini
 
 | Display | ESP32-C3 |
 |---------|----------|
@@ -151,20 +206,39 @@ src/
 | SCL (SCLK) | GPIO **4** |
 | BOOT (user) | GPIO **9** |
 
+### ESP32-2432S028 (already wired on the board)
+
+| Function | GPIO | | Function | GPIO |
+|----------|------|-|----------|------|
+| TFT SCLK | **14** | | Touch CLK | **25** |
+| TFT MOSI | **13** | | Touch CS | **33** |
+| TFT CS | **15** | | Touch DIN | **32** |
+| TFT DC | **2** | | Touch DO | **39** |
+| TFT RST | tied to EN | | Touch IRQ | unused |
+| Backlight | **21** (PWM) | | BOOT | **0** |
+
+The panel is on HSPI and touch on VSPI, so they never contend. Touch IRQ is deliberately not used
+(`pin_int = -1`, always poll) — relying on it means no touch at all if a clone wires it differently.
+
 ## Build
 
 ```bash
-pio run -t upload
+pio run -e cyd-st7789 -t upload
 pio device monitor
 ```
 
-- PlatformIO env: **`supermini`**
-- Serial: **115200** baud
-- USB CDC on boot enabled in `platformio.ini` for the Super Mini
+Use `-e supermini` or `-e cyd` for the other boards. Serial is **115200** baud.
+
+Two build details worth knowing if you adapt this:
+
+- `build_unflags = -std=gnu++11` is required — the Arduino framework appends that *after* `build_flags`,
+  silently overriding `-std=gnu++17`.
+- LovyanGFX is pinned to **1.2.27**, not caret-ranged. Newer releases declare a global `namespace fonts`
+  that collides with the aliases this project used.
 
 ### Web-flashable release image
 
-Single `.bin` for [esptool-js](https://espressif.github.io/esptool-js/) and similar tools (ESP32-C3, 4 MB, flash at **0x0**):
+Single `.bin` for [esptool-js](https://espressif.github.io/esptool-js/) and similar tools (ESP32-C3, 4 MB). **The flash offset depends on the chip:** **0x0** on the ESP32-C3, **0x1000** on the classic ESP32, whose ROM loader reserves the first 4 KB. `scripts/merge_firmware.py` derives this from `build.mcu`, so the merged image is already correct for whichever env you built.
 
 ```bash
 chmod +x scripts/merge-firmware.sh   # once
@@ -200,10 +274,13 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The release workflow builds firmware in CI and attaches the merged image to the release. Download from **Releases** on GitHub, then flash at **0x0** (ESP32-C3, 4 MB).
+The release workflow builds firmware in CI and attaches the merged image to the release. Download from **Releases** on GitHub, then flash at the offset for your chip (see above). Note the bundled CI workflows still build only the `supermini` env (ESP32-C3, 4 MB).
 
 ## Dependencies
 
-- [LovyanGFX](https://github.com/lovyan03/LovyanGFX)
+- [LovyanGFX](https://github.com/lovyan03/LovyanGFX) — pinned to 1.2.27, see [Build](#build)
 - [WiFiManager](https://github.com/tzapu/WiFiManager)
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson)
+
+Data sources: [adsb.fi](https://opendata.adsb.fi/) for aircraft, [adsbdb](https://www.adsbdb.com/) for flight
+routes, [OurAirports](https://ourairports.com/) for the embedded runway dataset.
