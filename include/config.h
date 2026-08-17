@@ -134,6 +134,9 @@ constexpr uint32_t kDisplaySpiWriteHz = 40000000;
 constexpr bool kDisplayInvert = true;
 constexpr bool kDisplayRgbOrder = true;
 
+/** No touch panel here; defined so the shared touch path still compiles. */
+constexpr bool kTouchDebugMarker = false;
+
 #endif
 
 // --- Radar center defaults (overridden via WiFi setup portal) ---

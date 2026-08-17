@@ -1,6 +1,6 @@
 # Plane Radar
 
-<img width="800" height="450" alt="plane-radar" src="https://github.com/user-attachments/assets/716d0992-dab8-47ba-8f1a-2aec7f607419" />
+<img width="800" alt="NerdMinner Plane Radar" src="NerdMinner-Plane-Radar.gif" />
 
 **3D printed case (STL + assembly):** [MakerWorld](https://makerworld.com/en/models/2872376-esp32-plane-radar-live-ads-b-on-a-round-display#profileId-3207083) · **Firmware:** [Releases](https://github.com/MatixYo/ESP32-Plane-Radar/releases)
 
@@ -21,6 +21,25 @@ Firmware showing a circular **ADS-B radar** around your configured location, wit
 The two 2.8″ revisions look identical from outside. If the image is mirrored or sheared on `cyd`, flash
 `cyd-st7789` — the controllers share `MADCTL`/`CASET`/`RASET`, so the wrong driver half-works rather than
 failing outright.
+
+## Quick start (NerdMiner / 2.8″ board)
+
+`cyd-st7789` is the default env, so no `-e` flag is needed:
+
+```bash
+pio run -t upload
+pio device monitor
+```
+
+Then:
+
+1. Connect to the **`PlaneRadar-Setup`** Wi‑Fi AP and open `http://plane-radar.local`
+2. Enter your Wi‑Fi credentials and your latitude/longitude, and save
+3. Tap the four corner markers if the touch calibration screen appears
+
+Prebuilt images are attached to [Releases](https://github.com/FRSname/NerdMinner-Plane-Radar/releases) —
+take `plane-radar-cyd-st7789-*.bin` and flash it at **0x1000** with
+[esptool-js](https://espressif.github.io/esptool-js/). `FLASHING.md` in each release lists the offsets.
 
 ## What it does
 
@@ -264,8 +283,8 @@ Put the board in download mode (hold **BOOT**, tap **RESET**), then flash with C
 
 | Workflow | When | Output |
 |----------|------|--------|
-| [Build](.github/workflows/build.yml) | Push / PR to `main` | Artifact `plane-radar-supermini` (merged + split `.bin` files, ~90 days) |
-| [Release](.github/workflows/release.yml) | Git tag `v*` (e.g. `v1.0.0`) | GitHub Release asset `plane-radar-v1.0.0.bin` + `.sha256` |
+| [Build](.github/workflows/build.yml) | Push / PR to `main` | One artifact per env: `plane-radar-cyd-st7789`, `plane-radar-cyd`, `plane-radar-supermini` (merged + split `.bin`, ~90 days) |
+| [Release](.github/workflows/release.yml) | Git tag `v*` (e.g. `v1.0.0`) | `plane-radar-<env>-v1.0.0.bin` + `.sha256` for all three envs, plus `FLASHING.md` with the per-board offsets |
 
 To ship a version users can download:
 
@@ -274,7 +293,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The release workflow builds firmware in CI and attaches the merged image to the release. Download from **Releases** on GitHub, then flash at the offset for your chip (see above). Note the bundled CI workflows still build only the `supermini` env (ESP32-C3, 4 MB).
+The release workflow builds firmware in CI and attaches the merged image to the release. Download from **Releases** on GitHub, then flash at the offset for your chip (see `FLASHING.md` in the release, or the table above). The C3 image is `plane-radar-supermini-*.bin` (ESP32-C3, 4 MB).
 
 ## Dependencies
 

@@ -38,8 +38,10 @@ jobs:
 
       - name: Build and merge
         run: |
-          pio run -e supermini
-          pio run -t merge -e supermini
+          for env in cyd-st7789 cyd supermini; do
+            pio run -e "$env"
+            pio run -t merge -e "$env"
+          done
 
       - name: Package release files
         run: |
@@ -48,9 +50,25 @@ jobs:
             VERSION="manual-${GITHUB_SHA::7}"
           fi
           mkdir -p dist
-          cp .pio/build/supermini/firmware-merged.bin "dist/plane-radar-${VERSION}.bin"
-          sha256sum "dist/plane-radar-${VERSION}.bin" > "dist/plane-radar-${VERSION}.bin.sha256"
+          for env in cyd-st7789 cyd supermini; do
+            out="dist/plane-radar-${env}-${VERSION}.bin"
+            cp ".pio/build/${env}/firmware-merged.bin" "$out"
+            sha256sum "$out" > "${out}.sha256"
+          done
           echo "version=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Write flashing notes
+        run: |
+          cat > dist/FLASHING.md <<'EOF'
+          | Image | Board | Chip | Flash offset |
+          |-------|-------|------|--------------|
+          | `plane-radar-cyd-st7789-*.bin` | 2.8" ST7789 (NerdMiner TPM408-2.8) | ESP32 | **0x1000** |
+          | `plane-radar-cyd-*.bin` | 2.8" ILI9341 (Cheap Yellow Display) | ESP32 | **0x1000** |
+          | `plane-radar-supermini-*.bin` | ESP32-C3 Super Mini + round GC9A01 | ESP32-C3 | **0x0** |
+
+          The two 2.8" revisions look identical from outside. If the image is
+          mirrored or sheared with one, flash the other.
+          EOF
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
