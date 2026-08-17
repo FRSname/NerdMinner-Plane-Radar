@@ -11,7 +11,8 @@
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 
-namespace fonts = lgfx::v1::fonts;
+// `fonts` comes from LovyanGFX's own global namespace (lgfx_fonts.hpp); an
+// alias here would collide with it.
 
 namespace ui::runway {
 namespace {
@@ -91,8 +92,12 @@ void latLonToScreen(float lat, float lon, int* out_x, int* out_y) {
   float dist_km = 0.0f;
   offsetKmFromCenter(lat, lon, &dx_km, &dy_km, &dist_km);
 
-  *out_x = radar::kCenterX + static_cast<int>(lroundf(dx_km * px_per_km));
-  *out_y = radar::kCenterY - static_cast<int>(lroundf(dy_km * px_per_km));
+  float right_km = 0.0f;
+  float up_km = 0.0f;
+  radar::toScreenAxes(dx_km, dy_km, &right_km, &up_km);
+
+  *out_x = radar::kCenterX + static_cast<int>(lroundf(right_km * px_per_km));
+  *out_y = radar::kCenterY - static_cast<int>(lroundf(up_km * px_per_km));
 }
 
 int distSqFromCenter(int x, int y) {

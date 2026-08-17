@@ -11,7 +11,8 @@
 #include "hardware/display.h"
 #include "hardware/display_font.h"
 
-namespace fonts = lgfx::v1::fonts;
+// `fonts` comes from LovyanGFX's own global namespace (lgfx_fonts.hpp); an
+// alias here would collide with it.
 
 namespace {
 

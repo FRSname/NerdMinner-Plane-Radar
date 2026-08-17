@@ -10,9 +10,16 @@ struct Aircraft {
   float nose_deg;
   float track_deg;
   float gs_knots;
+  /** Climb (+) or descent (-) in feet per minute; 0 when not reported. */
+  float vert_rate_fpm;
   char callsign[9];
   char type[5];
   char alt[12];
+  /** ICAO 24-bit address, the only always-present identifier. */
+  char hex[8];
+  /** Tail number, when the feed carries one. */
+  char reg[12];
+  char squawk[6];
 };
 
 constexpr size_t kMaxAircraft = 64;

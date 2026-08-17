@@ -1,15 +1,66 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
+
+#include "config.h"
 
 namespace ui::radar {
 
+constexpr float kDegToRad = 0.01745329252f;
+
+/**
+ * Compass bearing (degrees clockwise from true north) drawn at the top of the
+ * radar. 0 = conventional north-up, 90 = east-up. Everything that maps the
+ * world onto the screen — aircraft, runways, heading vectors, the N/E/S/W
+ * labels — derives its orientation from this one value.
+ */
+constexpr float kScreenUpBearingDeg = 90.0f;
+
+/**
+ * Rotate a local east/north offset into screen axes. Returns a rightward and
+ * an upward component; screen y grows downward, so callers subtract `up`.
+ */
+inline void toScreenAxes(float east, float north, float* right, float* up) {
+  const float b = kScreenUpBearingDeg * kDegToRad;
+  const float sin_b = sinf(b);
+  const float cos_b = cosf(b);
+  *right = east * cos_b - north * sin_b;
+  *up = north * cos_b + east * sin_b;
+}
+
+/** Convert a compass bearing to its on-screen angle (0 = straight up). */
+inline float screenBearingDeg(float bearing_deg) {
+  return bearing_deg - kScreenUpBearingDeg;
+}
+
+#if defined(BOARD_CYD)
+/**
+ * The classic ESP32 caps a single allocation at a ~110 KB contiguous DRAM
+ * block, so the 240×240 16bpp frame buffer (115,200 B) will not fit however
+ * early it is claimed. Scale the radar down ~10% to 216×216 (93,312 B); the
+ * grid keeps its proportions and the panel has room to spare either side.
+ */
+constexpr int kSize = 216;
+#else
 constexpr int kSize = 240;
+#endif
 constexpr int kCenterX = kSize / 2;
 constexpr int kCenterY = kSize / 2;
 
+/**
+ * Where the kSize×kSize radar square lands on the panel. Zero on a 240×240
+ * display; on a wider panel the radar is letterboxed into the centre.
+ */
+constexpr int kOriginX = (config::kDisplayWidth - kSize) / 2;
+constexpr int kOriginY = (config::kDisplayHeight - kSize) / 2;
+
 /** Outermost grid ring (inside edge labels). */
+#if defined(BOARD_CYD)
+constexpr int kGridOuterRadius = 96;  // 107 scaled by 216/240
+#else
 constexpr int kGridOuterRadius = 107;
+#endif
 
 /** N: offset from top edge (top_center, negative = up). */
 constexpr int kCardinalNorthOffsetY = -1;

@@ -17,6 +17,10 @@ def merge_firmware(source, target, env):
     mcu = env.BoardConfig().get("build.mcu", "esp32c3")
     flash_size = env.BoardConfig().get("upload.flash_size", "4MB")
 
+    # The classic ESP32 keeps the first 4 KB of flash for itself; its ROM
+    # loader looks for the bootloader at 0x1000. C3/S3 put it at 0x0.
+    bootloader_offset = "0x1000" if mcu == "esp32" else "0x0"
+
     bootloader = join(build_dir, "bootloader.bin")
     partitions = join(build_dir, "partitions.bin")
     firmware = join(build_dir, f"{progname}.bin")
@@ -44,7 +48,7 @@ def merge_firmware(source, target, env):
         "80m",
         "--flash_size",
         flash_size,
-        "0x0",
+        bootloader_offset,
         bootloader,
         "0x8000",
         partitions,

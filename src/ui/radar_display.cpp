@@ -15,7 +15,8 @@
 #include "ui/radar_theme.h"
 #include "ui/runway_overlay.h"
 
-namespace fonts = lgfx::v1::fonts;
+// `fonts` comes from LovyanGFX's own global namespace (lgfx_fonts.hpp); an
+// alias here would collide with it.
 
 namespace ui {
 namespace radar {
@@ -53,6 +54,15 @@ int s_scale_label_h = 0;
 
 lgfx::LovyanGFX* s_draw = &tft;
 LGFX_Sprite s_frame(&tft);
+
+/** Where each aircraft was last drawn, in sprite space, for tap hit-testing. */
+struct HitTarget {
+  int x;
+  int y;
+  size_t index;
+};
+HitTarget s_hits[services::adsb::kMaxAircraft];
+size_t s_hit_count = 0;
 bool s_frame_ready = false;
 
 class DrawScope {
@@ -217,7 +227,7 @@ float innerRingMaxKm() {
                      static_cast<float>(radar::kGridOuterRadius));
 }
 
-/** Flat lat/lon as x/y: 1° ≈ 111 km, north = screen up. */
+/** Flat lat/lon as x/y: 1° ≈ 111 km, oriented by radar::kScreenUpBearingDeg. */
 void latLonToScreen(float lat, float lon, int* out_x, int* out_y) {
   const float outer_km = radar::rangeCurrent().outer_km;
   const float px_per_km = static_cast<float>(radar::kGridOuterRadius) / outer_km;
@@ -227,8 +237,12 @@ void latLonToScreen(float lat, float lon, int* out_x, int* out_y) {
   float dist_km = 0.0f;
   offsetKmFromCenter(lat, lon, &dx_km, &dy_km, &dist_km);
 
-  *out_x = radar::kCenterX + static_cast<int>(lroundf(dx_km * px_per_km));
-  *out_y = radar::kCenterY - static_cast<int>(lroundf(dy_km * px_per_km));
+  float right_km = 0.0f;
+  float up_km = 0.0f;
+  radar::toScreenAxes(dx_km, dy_km, &right_km, &up_km);
+
+  *out_x = radar::kCenterX + static_cast<int>(lroundf(right_km * px_per_km));
+  *out_y = radar::kCenterY - static_cast<int>(lroundf(up_km * px_per_km));
 }
 
 bool isInsideOuterRingKm(float dist_km) { return dist_km <= innerRingMaxKm(); }
@@ -260,7 +274,8 @@ bool beyondRingEdgeDotFromLatLon(float lat, float lon, int* out_x, int* out_y) {
   const int cx = radar::kCenterX;
   const int cy = radar::kCenterY;
   const int rim_r = radar::kCenterX - radar::kBeyondRingScreenMarginPx;
-  const float angle_rad = atan2f(dx_km, dy_km);
+  const float angle_rad = atan2f(dx_km, dy_km) -
+                          radar::kScreenUpBearingDeg * radar::kDegToRad;
 
   *out_x = cx + static_cast<int>(lroundf(sinf(angle_rad) * rim_r));
   *out_y = cy - static_cast<int>(lroundf(cosf(angle_rad) * rim_r));
@@ -320,14 +335,14 @@ int speedLineLengthPx(float gs_knots) {
 
 void noseTip(int cx, int cy, float heading_deg, int* tip_x, int* tip_y) {
   constexpr float kDegToRad = 0.01745329252f;
-  const float rad = heading_deg * kDegToRad;
+  const float rad = radar::screenBearingDeg(heading_deg) * kDegToRad;
   *tip_x = cx + static_cast<int>(lroundf(sinf(rad) * radar::kAircraftNoseLenPx));
   *tip_y = cy - static_cast<int>(lroundf(cosf(rad) * radar::kAircraftNoseLenPx));
 }
 
 void drawHeadingTriangle(int cx, int cy, float heading_deg, uint16_t color) {
   constexpr float kDegToRad = 0.01745329252f;
-  const float rad = heading_deg * kDegToRad;
+  const float rad = radar::screenBearingDeg(heading_deg) * kDegToRad;
   const float sin_h = sinf(rad);
   const float cos_h = cosf(rad);
 
@@ -359,7 +374,7 @@ void drawSpeedVector(int cx, int cy, float heading_deg, float track_deg,
   noseTip(cx, cy, heading_deg, &tip_x, &tip_y);
 
   constexpr float kDegToRad = 0.01745329252f;
-  const float rad = track_deg * kDegToRad;
+  const float rad = radar::screenBearingDeg(track_deg) * kDegToRad;
   int ex = tip_x + static_cast<int>(lroundf(sinf(rad) * len));
   int ey = tip_y - static_cast<int>(lroundf(cosf(rad) * len));
   clipPointToOuterRing(tip_x, tip_y, &ex, &ey);
@@ -529,6 +544,15 @@ void drawAircraft() {
   }
 
   sortDrawItemsFarFirst(items, draw_count);
+
+  s_hit_count = 0;
+  for (size_t d = 0; d < draw_count; ++d) {
+    s_hits[s_hit_count].x = items[d].x;
+    s_hits[s_hit_count].y = items[d].y;
+    s_hits[s_hit_count].index = items[d].index;
+    ++s_hit_count;
+  }
+
   for (size_t d = 0; d < draw_count; ++d) {
     const size_t i = items[d].index;
     const int x = items[d].x;
@@ -618,11 +642,19 @@ void drawCardinalLabels() {
   const int cy = radar::kCenterY;
   const int edge = radar::kSize - 1;
 
-  drawCardinalLabel("N", cx, radar::kCardinalNorthOffsetY, textdatum_t::top_center);
-  drawCardinalLabel("S", cx, edge + radar::kCardinalSouthOffsetY,
+  // Compass points in clockwise order, indexed by quarter-turns from north.
+  // Whichever one the screen-up bearing selects goes on top; the rest follow.
+  static const char* const kPoints[4] = {"N", "E", "S", "W"};
+  const int top =
+      static_cast<int>(lroundf(radar::kScreenUpBearingDeg / 90.0f)) & 3;
+
+  drawCardinalLabel(kPoints[top], cx, radar::kCardinalNorthOffsetY,
+                    textdatum_t::top_center);
+  drawCardinalLabel(kPoints[(top + 2) & 3], cx,
+                    edge + radar::kCardinalSouthOffsetY,
                     textdatum_t::bottom_center);
-  drawCardinalLabel("W", 0, cy, textdatum_t::middle_left);
-  drawCardinalLabel("E", edge, cy, textdatum_t::middle_right);
+  drawCardinalLabel(kPoints[(top + 3) & 3], 0, cy, textdatum_t::middle_left);
+  drawCardinalLabel(kPoints[(top + 1) & 3], edge, cy, textdatum_t::middle_right);
 }
 
 int scaleLabelAnchorX(int cx, int outer_radius) {
@@ -662,7 +694,12 @@ bool ensureFrameSprite() {
   }
   s_frame.setColorDepth(16);
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
-    Serial.println("radar: frame sprite alloc failed");
+    Serial.printf(
+        "radar: frame sprite alloc failed (need %u B contiguous; free %u B, "
+        "largest block %u B)\n",
+        static_cast<unsigned>(radar::kSize * radar::kSize * 2),
+        static_cast<unsigned>(ESP.getFreeHeap()),
+        static_cast<unsigned>(ESP.getMaxAllocHeap()));
     return false;
   }
   s_frame_ready = true;
@@ -678,11 +715,51 @@ void renderFrame() {
     const DrawScope scope(s_frame);
     drawAircraft();
   }
-  s_frame.pushSprite(0, 0);
+  // On a panel wider or taller than the radar, repaint the letterbox bars: a
+  // status screen may have drawn over them while the radar was hidden.
+  if constexpr (radar::kOriginX > 0) {
+    tft.fillRect(0, 0, radar::kOriginX, config::kDisplayHeight,
+                 radar::kColorBackground);
+    tft.fillRect(radar::kOriginX + radar::kSize, 0,
+                 config::kDisplayWidth - radar::kOriginX - radar::kSize,
+                 config::kDisplayHeight, radar::kColorBackground);
+  }
+  if constexpr (radar::kOriginY > 0) {
+    tft.fillRect(0, 0, config::kDisplayWidth, radar::kOriginY,
+                 radar::kColorBackground);
+    tft.fillRect(0, radar::kOriginY + radar::kSize, config::kDisplayWidth,
+                 config::kDisplayHeight - radar::kOriginY - radar::kSize,
+                 radar::kColorBackground);
+  }
+  s_frame.pushSprite(radar::kOriginX, radar::kOriginY);
   tft.setTextDatum(textdatum_t::top_left);
 }
 
 }  // namespace
+
+void radarDisplayPrepare() {
+  ensureFrameSprite();
+}
+
+int radarDisplayHitTest(int panel_x, int panel_y, int max_px) {
+  // Hit targets are cached in sprite space; the sprite sits at the origin
+  // offset on wider panels.
+  const int x = panel_x - radar::kOriginX;
+  const int y = panel_y - radar::kOriginY;
+
+  int best = -1;
+  int best_dist_sq = max_px * max_px;
+  for (size_t i = 0; i < s_hit_count; ++i) {
+    const int dx = x - s_hits[i].x;
+    const int dy = y - s_hits[i].y;
+    const int dist_sq = dx * dx + dy * dy;
+    if (dist_sq <= best_dist_sq) {
+      best_dist_sq = dist_sq;
+      best = static_cast<int>(s_hits[i].index);
+    }
+  }
+  return best;
+}
 
 void radarDisplayDraw() {
   initPalette();

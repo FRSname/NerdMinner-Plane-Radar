@@ -181,9 +181,15 @@ void formatAltitudeTag(const JsonObject& plane, char* out, size_t out_len) {
   }
 
   float alt = 0.0f;
+  // adsb.fi reports barometric/geometric altitude in feet.
   if (readJsonFloat(plane, "alt_baro", &alt) ||
       readJsonFloat(plane, "alt_geom", &alt)) {
-    snprintf(out, out_len, "%d ft", static_cast<int>(lroundf(alt)));
+    if (config::kAltitudeInMeters) {
+      snprintf(out, out_len, "%d m",
+               static_cast<int>(lroundf(alt * 0.3048f)));
+    } else {
+      snprintf(out, out_len, "%d ft", static_cast<int>(lroundf(alt)));
+    }
   }
 }
 
@@ -195,6 +201,19 @@ void fillTagFields(Aircraft* ac, const JsonObject& plane) {
 
   copyJsonStringTrimmed(plane, "t", ac->type, sizeof(ac->type));
   formatAltitudeTag(plane, ac->alt, sizeof(ac->alt));
+
+  // Detail-panel extras. All optional in the feed, so they stay empty/zero
+  // rather than being faked when the aircraft does not report them.
+  copyJsonStringTrimmed(plane, "hex", ac->hex, sizeof(ac->hex));
+  copyJsonStringTrimmed(plane, "r", ac->reg, sizeof(ac->reg));
+  copyJsonStringTrimmed(plane, "squawk", ac->squawk, sizeof(ac->squawk));
+
+  ac->vert_rate_fpm = 0.0f;
+  float rate = 0.0f;
+  if (readJsonFloat(plane, "baro_rate", &rate) ||
+      readJsonFloat(plane, "geom_rate", &rate)) {
+    ac->vert_rate_fpm = rate;
+  }
 }
 
 }  // namespace
