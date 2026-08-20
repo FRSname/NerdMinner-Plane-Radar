@@ -2,7 +2,6 @@
 
 ![NerdMinner Plane Radar](https://raw.githubusercontent.com/FRSname/NerdMinner-Plane-Radar/main/NerdMinner-Plane-Radar.gif)
 
-**3D printed case (STL + assembly):** [MakerWorld](https://makerworld.com/en/models/2872376-esp32-plane-radar-live-ads-b-on-a-round-display#profileId-3207083) · **Firmware:** [Releases](https://github.com/MatixYo/ESP32-Plane-Radar/releases)
 
 Firmware showing a circular **ADS-B radar** around your configured location, with **WiFiManager** for first-time setup.
 
